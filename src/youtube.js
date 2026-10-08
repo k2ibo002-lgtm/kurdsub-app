@@ -179,7 +179,7 @@ function decodeEntities(s) {
 }
 
 /** Parse YouTube timedtext XML (<transcript><text start=.. dur=..>..</text>). */
-function parseTimedtextXml(xml) {
+export function parseTimedtextXml(xml) {
   const lines = [];
   const re = /<text start="([\d.]+)"(?:\s+dur="([\d.]+)")?[^>]*>([\s\S]*?)<\/text>/g;
   let m;
@@ -192,6 +192,42 @@ function parseTimedtextXml(xml) {
     if (text) lines.push({ start, end: start + dur, text });
   }
   return lines;
+}
+
+/** Parse YouTube json3 captions ({"events":[{"tStartMs","dDurationMs","segs":[{"utf8"}]}]}). */
+export function parseJson3(json) {
+  const lines = [];
+  let d;
+  try {
+    d = JSON.parse(json);
+  } catch {
+    return lines;
+  }
+  for (const ev of d.events || []) {
+    const text = decodeEntities(
+      (ev.segs || [])
+        .map((s) => s.utf8 || "")
+        .join("")
+        .replace(/\n/g, " ")
+        .trim()
+    );
+    if (!text) continue;
+    const start = (ev.tStartMs || 0) / 1000;
+    const dur = (ev.dDurationMs || 2000) / 1000;
+    lines.push({ start, end: start + dur, text });
+  }
+  return lines;
+}
+
+/**
+ * Parse a captured caption body (XML or json3) into lines.
+ * Returns [] when the format is not recognized.
+ */
+export function parseCaptionsBody(body) {
+  if (!body) return [];
+  if (body.indexOf("<transcript") !== -1) return parseTimedtextXml(body);
+  if (body.indexOf('"events"') !== -1) return parseJson3(body);
+  return [];
 }
 
 /**

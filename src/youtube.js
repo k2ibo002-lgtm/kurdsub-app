@@ -30,7 +30,9 @@ export function extractVideoId(url) {
 
 const CLIENTS = [
   // ANDROID: returns captions reliably on normal (non-datacenter) IPs.
-  { clientName: "ANDROID", clientVersion: "19.09.37", androidSdkVersion: 30 },
+  // NOTE: 19.09.37 is now rejected by YouTube ("Precondition check failed"),
+  // so keep this version current.
+  { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30 },
   // WEB: fallback.
   { clientName: "WEB", clientVersion: "2.20241201" },
 ];

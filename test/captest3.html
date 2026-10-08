@@ -6,49 +6,17 @@
 <title>تاقی WebView</title>
 <style>
 body{font-family:system-ui;background:#111;color:#eee;padding:16px;text-align:center}
-button{background:#22c55e;color:#fff;border:0;border-radius:12px;padding:14px 34px;font-size:18px;font-weight:700}
-#out{background:#000;border-radius:10px;padding:12px;margin-top:14px;text-align:left;direction:ltr;font-size:13px;white-space:pre-wrap;min-height:120px}
-#player{margin:12px auto;max-width:420px}
-.ok{color:#4ade80}.bad{color:#f87171}
+iframe{width:100%;max-width:420px;height:240px;border:0;border-radius:10px}
+.ok{background:#052e16;border:1px solid #16a34a;border-radius:10px;padding:12px;margin-top:14px}
 </style>
 </head>
 <body>
 <h3>تاقی پلیەری فەرمی (بەبێ بیلد)</h3>
-<div id="player"></div>
-<button id="go">تاقیبکە ▶</button>
-<div id="out">ئەنجام لێرە دەردەکەوێت…</div>
-<script src="https://www.youtube.com/iframe_api"></script>
-<script>
-var player=null, log=[];
-function say(t,cls){log.push(t);document.getElementById('out').innerHTML=log.map(function(x){return x}).join('\n');}
-function onYouTubeIframeAPIReady(){say('API ئامادەیە ✅');}
-document.getElementById('go').onclick=function(){
-  say('پلیەر دروست دەبێت…');
-  player=new YT.Player('player',{height:'240',width:'100%',
-    videoId:'DWiSomb6gRo',
-    playerVars:{cc_load_policy:1,hl:'en',playsinline:1},
-    events:{
-      onReady:function(){
-        say('پلیەر ئامادەیە ✅');
-        setTimeout(function(){
-          try{
-            var tl=player.getOption('captions','tracklist');
-            say('ژمارەی تراکەکان: '+(tl?tl.length:0));
-            if(tl&&tl.length){
-              tl.forEach(function(t,i){say('  '+(i+1)+'. '+(t.languageName||t.languageCode)+' ('+t.languageCode+')');});
-              say('<span class="ok">✅ پلیەرەکە ژێرنووس دەبینێت — WebView کاردەکات</span>');
-            }else{
-              say('<span class="bad">❌ هیچ تراکێک نەدۆزرایەوە</span>');
-            }
-          }catch(e){say('<span class="bad">هەڵە: '+e.message+'</span>');}
-          try{say('دۆخی پلیەر: '+player.getPlayerState()+' (1=پەخش)');}catch(e){}
-          try{say('ماوە: '+Math.round(player.getDuration())+' چرکە');}catch(e){}
-        },4000);
-      },
-      onError:function(e){say('<span class="bad">❌ هەڵەی پلیەر: '+e.data+'</span>');},
-      onStateChange:function(e){say('دۆخ گۆڕا: '+e.data);}
-    }});
-};
-</script>
+<iframe src="https://www.youtube.com/embed/DWiSomb6gRo?cc_load_policy=1&hl=en&playsinline=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+<div class="ok">
+✅ ئەگەر لەسەر ڤیدیۆکە <b>ژێرنووسی ئینگلیزی</b> دەبینیت،<br>
+واتە پلیەرەکە ژێرنووس وەردەگرێت و WebView کاردەکات.<br>
+وێنەیەک بگرە و بۆم بنێرە.
+</div>
 </body>
 </html>

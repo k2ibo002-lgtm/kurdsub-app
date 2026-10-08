@@ -82,19 +82,22 @@ export default function HomeScreen({ navigation }) {
       navigation.navigate("Player", { data, backend: be });
     } catch (e) {
       const msg = e.message || "";
-      setError(
+      const det = e.details ? `\n\n🔧 وردەکاری: ${e.details}` : "";
+      const base =
         msg === "no_captions"
           ? "ئەم ڤیدیۆیە ژێرنووسی ئامادەی نییە — بۆ ئەم جۆرە ڤیدیۆیانە (و بۆ دەنگی AI) ناونیشانی سێرڤەر (کۆمپیوتەر) لە خوارەوە بنووسە"
           : msg === "yt_unreachable"
           ? "نەتوانرا پەیوەندی بە یووتیوبەوە بکرێت — هێڵی ئینتەرنێتەکە بپشکنە و دووبارە تاقیبکەرەوە"
           : msg === "caps_dl_failed"
           ? "ژێرنووسەکان دۆزرانەوە بەڵام دابەزینیان سەرکەوتوو نەبوو — دووبارە تاقیبکەرەوە"
+          : msg === "caps_parse_failed"
+          ? "ژێرنووسەکان دۆزرانەوە بەڵام خوێندنەوەیان سەرکەوتوو نەبوو — وێنەی ئەمە بگرە و بینێرە"
           : msg === "tr_failed"
           ? "نەتوانرا پەیوەندی بە خزمەتی وەرگێڕانەوە بکرێت — هێڵی ئینتەرنێت بپشکنە و دووبارە تاقیبکەرەوە"
           : msg === "no-server"
           ? "نەتوانرا پەیوەندی بە سێرڤەرەوە بکرێت — دڵنیابە run.bat لەسەر کۆمپیوتەرەکە کار دەکات و هەمان وایفاین"
-          : `هەڵە: ${String(msg || e)}`
-      );
+          : `هەڵە: ${String(msg || e)}`;
+      setError(base + det);
     } finally {
       setLoading(false);
       setStatus("");

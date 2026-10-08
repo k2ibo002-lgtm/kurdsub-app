@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, ScrollView,
+  ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, ScrollView, View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiInfo, getSubtitles } from "../api";
@@ -47,13 +47,17 @@ export default function HomeScreen({ navigation }) {
       wvJobRef.current = job;
       setWvJob(job);
     });
-  const wvFinish = (ok, arg) => {
+  const wvFinish = (ok, arg, details) => {
     const j = wvJobRef.current;
     wvJobRef.current = null;
     setWvJob(null);
     if (!j) return;
     if (ok) j.resolve(arg);
-    else j.reject(arg);
+    else {
+      const e = arg instanceof Error ? arg : new Error(String(arg));
+      if (details) e.details = details;
+      j.reject(e);
+    }
   };
 
   // Standalone: fetch captions from YouTube + translate on the phone.
@@ -66,20 +70,21 @@ export default function HomeScreen({ navigation }) {
     } catch (e) {
       const m = e.message || "";
       if (m === "no_captions" || m === "caps_parse_failed" || m === "caps_dl_failed") {
-        // Fall back to the official player in a hidden WebView.
+        // Fall back to the official player in a VISIBLE WebView (v3.5: iOS
+        // throttles invisible WebViews, which broke v3.4's hidden player).
         setStatus("⏳ هێنانی ژێرنووس لە پلیەری فەرمییەوە...");
-        let body;
+        let capRes;
         try {
-          body = await fetchViaWebView(videoId);
+          capRes = await fetchViaWebView(videoId);
         } catch (we) {
           const err = new Error(we.message || "webview_error");
-          err.details = "webview:" + (we.message || "error");
+          err.details = "webview:" + (we.message || "error") + (we.details ? " " + we.details : "");
           throw err;
         }
-        const lines = parseCaptionsBody(body);
+        const lines = parseCaptionsBody(capRes.body);
         if (!lines.length) {
           const err = new Error("no_captions");
-          err.details = "webview:0lines";
+          err.details = "webview:0lines via=" + (capRes.via || "?");
           throw err;
         }
         caps = { lines, lang: "en", title: "" };
@@ -192,12 +197,15 @@ export default function HomeScreen({ navigation }) {
       <Text style={s.credit}>وەرگێڕان: Google • دەنگی AI: Vekol-TTS (Sorani) لەلایەن Revge — CC-BY-NC 4.0</Text>
 
       {wvJob && (
-        <CaptionWebView
-          key={wvJob.key}
-          videoId={wvJob.videoId}
-          onCaptions={(xml) => wvFinish(true, xml)}
-          onError={(code) => wvFinish(false, new Error(code))}
-        />
+        <View style={{ alignItems: "center", marginTop: 12 }}>
+          <Text style={s.status}>📺 پلیەری یووتیوب — هێنانی ژێرنووس…</Text>
+          <CaptionWebView
+            key={wvJob.key}
+            videoId={wvJob.videoId}
+            onCaptions={(res) => wvFinish(true, res)}
+            onError={(code, details) => wvFinish(false, new Error(code), details)}
+          />
+        </View>
       )}
     </ScrollView>
   );

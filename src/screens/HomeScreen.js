@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiInfo, getSubtitles } from "../api";
-import { extractVideoId, fetchCaptions } from "../youtube";
+import { extractVideoId, fetchCaptions, parseCaptionsBody } from "../youtube";
 import { translateBatch } from "../translate";
+import CaptionWebView from "../CaptionWebView";
 
 const BACKEND_KEY = "kurdsub_backend";
 
@@ -16,6 +17,8 @@ export default function HomeScreen({ navigation }) {
   const [status, setStatus] = useState("");
   const [serverOk, setServerOk] = useState(null);
   const [error, setError] = useState("");
+  const [wvJob, setWvJob] = useState(null);
+  const wvJobRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -35,11 +38,55 @@ export default function HomeScreen({ navigation }) {
     await AsyncStorage.setItem(BACKEND_KEY, b);
   };
 
+  // Official-player fallback: hidden WebView loads YouTube's real embed player,
+  // which mints its own PO tokens and passes bot checks. We capture the
+  // caption file it downloads. Resolves with the raw caption body text.
+  const fetchViaWebView = (videoId) =>
+    new Promise((resolve, reject) => {
+      const job = { videoId, key: Date.now(), resolve, reject };
+      wvJobRef.current = job;
+      setWvJob(job);
+    });
+  const wvFinish = (ok, arg) => {
+    const j = wvJobRef.current;
+    wvJobRef.current = null;
+    setWvJob(null);
+    if (!j) return;
+    if (ok) j.resolve(arg);
+    else j.reject(arg);
+  };
+
   // Standalone: fetch captions from YouTube + translate on the phone.
   // No computer needed.
   const goStandalone = async (videoId) => {
-    setStatus("⏳ ژێرنووسەکان لە یووتیوبەوە دەهێنرێن...");
-    const caps = await fetchCaptions(videoId);
+    let caps = null;
+    try {
+      setStatus("⏳ ژێرنووسەکان لە یووتیوبەوە دەهێنرێن...");
+      caps = await fetchCaptions(videoId);
+    } catch (e) {
+      const m = e.message || "";
+      if (m === "no_captions" || m === "caps_parse_failed" || m === "caps_dl_failed") {
+        // Fall back to the official player in a hidden WebView.
+        setStatus("⏳ هێنانی ژێرنووس لە پلیەری فەرمییەوە...");
+        let body;
+        try {
+          body = await fetchViaWebView(videoId);
+        } catch (we) {
+          const err = new Error(we.message || "webview_error");
+          err.details = "webview:" + (we.message || "error");
+          throw err;
+        }
+        const lines = parseCaptionsBody(body);
+        if (!lines.length) {
+          const err = new Error("no_captions");
+          err.details = "webview:0lines";
+          throw err;
+        }
+        caps = { lines, lang: "en", title: "" };
+      } else {
+        throw e;
+      }
+    }
     setStatus(`⏳ وەرگێڕانی ${caps.lines.length} دێڕ بۆ کوردی...`);
     const kuTexts = await translateBatch(
       caps.lines.map((l) => l.text), caps.lang, "ckb"
@@ -92,6 +139,8 @@ export default function HomeScreen({ navigation }) {
           ? "ژێرنووسەکان دۆزرانەوە بەڵام دابەزینیان سەرکەوتوو نەبوو — دووبارە تاقیبکەرەوە"
           : msg === "caps_parse_failed"
           ? "ژێرنووسەکان دۆزرانەوە بەڵام خوێندنەوەیان سەرکەوتوو نەبوو — وێنەی ئەمە بگرە و بینێرە"
+          : msg === "webview_timeout" || msg === "webview_error"
+          ? "پلیەری فەرمی وەڵامی نەدایەوە — دڵنیابە ڤیدیۆکە گشتییە و دووبارە تاقیبکەرەوە"
           : msg === "tr_failed"
           ? "نەتوانرا پەیوەندی بە خزمەتی وەرگێڕانەوە بکرێت — هێڵی ئینتەرنێت بپشکنە و دووبارە تاقیبکەرەوە"
           : msg === "no-server"
@@ -141,6 +190,15 @@ export default function HomeScreen({ navigation }) {
       {serverOk === false && <Text style={s.warn}>⚠️ سێرڤەر نەدۆزرایەوە — run.bat کار بکە لەسەر کۆمپیوتەرەکە</Text>}
 
       <Text style={s.credit}>وەرگێڕان: Google • دەنگی AI: Vekol-TTS (Sorani) لەلایەن Revge — CC-BY-NC 4.0</Text>
+
+      {wvJob && (
+        <CaptionWebView
+          key={wvJob.key}
+          videoId={wvJob.videoId}
+          onCaptions={(xml) => wvFinish(true, xml)}
+          onError={(code) => wvFinish(false, new Error(code))}
+        />
+      )}
     </ScrollView>
   );
 }

@@ -30,10 +30,12 @@ export function extractVideoId(url) {
 
 const CLIENTS = [
   // ANDROID: returns captions reliably on normal (non-datacenter) IPs.
-  // NOTE: 19.09.37 is now rejected by YouTube ("Precondition check failed"),
-  // so keep this version current.
+  // NOTE: keep versions current — YouTube rejects outdated client versions
+  // with 400 "Precondition check failed" (19.09.37 died ~Oct 2026).
   { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30 },
-  // WEB: fallback.
+  // IOS: same client family as the iPhone YouTube app itself.
+  { clientName: "IOS", clientVersion: "20.10.38" },
+  // WEB: fallback (can be served bot-check responses without captions).
   { clientName: "WEB", clientVersion: "2.20241201" },
 ];
 

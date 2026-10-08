@@ -1,0 +1,58 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Expo prebuild (generate native iOS project)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      - name: Archive without code signing
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace KurdSub.xcworkspace \
+            -scheme KurdSub \
+            -configuration Release \
+            -archivePath "$PWD/build/KurdSub.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          APP_DIR=$(find ios/build/KurdSub.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
+          echo "App: $APP_DIR"
+          test -d "$APP_DIR"
+          rm -rf Payload KurdSub-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP_DIR" Payload/
+          zip -r KurdSub-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KurdSub-unsigned-ipa
+          path: KurdSub-unsigned.ipa
+          if-no-files-found: error

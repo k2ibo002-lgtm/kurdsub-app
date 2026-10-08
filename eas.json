@@ -1,0 +1,1 @@
+{"build":{"preview":{"distribution":"internal","ios":{"simulator":false}},"production":{"ios":{"autoIncrement":true}}},"cli":{"version":">= 5.0.0"},"submit":{"production":{}}}

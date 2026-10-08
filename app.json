@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "com.kardo.kurdsub",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      },
+      "supportsTablet": true
+    },
+    "name": "KurdSub",
+    "orientation": "portrait",
+    "plugins": [],
+    "scheme": "kurdsub",
+    "slug": "kurdsub",
+    "splash": {
+      "backgroundColor": "#0b0e14"
+    },
+    "userInterfaceStyle": "dark",
+    "version": "2.0.0"
+  }
+}

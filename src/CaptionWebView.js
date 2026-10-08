@@ -1,47 +1,99 @@
 import React, { useRef, useEffect } from "react";
 import { WebView } from "react-native-webview";
 
-// Hidden WebView that loads YouTube's OFFICIAL embed player and captures the
+// VISIBLE WebView that loads YouTube's OFFICIAL embed player and captures the
 // caption file it downloads. The official player mints its own PO tokens and
 // passes YouTube's bot checks, so this works where anonymous API requests
 // get empty responses.
 //
-// Props: videoId, onCaptions(xmlText), onError(code)
+// v3.5: the WebView is VISIBLE (iOS throttles invisible WebViews, which broke v3.4).
+// Triple-redundant capture:
+//   1. Hook fetch/XHR -> capture timedtext response BODY.
+//   2. Poll performance entries -> capture timedtext/get_transcript URLS,
+//      then the app fetches the URL directly (it carries valid tokens).
+//   3. Capture the InnerTube player response -> extract captionTracks baseUrls.
+//
+// Props: videoId, onCaptions({body, via}), onError(code, details)
 export default function CaptionWebView({ videoId, onCaptions, onError }) {
   const done = useRef(false);
   const timer = useRef(null);
+  const seen = useRef({ urls: [] });
 
   useEffect(() => {
     timer.current = setTimeout(() => {
       if (!done.current) {
         done.current = true;
-        onError("webview_timeout");
+        onError("webview_timeout", "urls_seen:" + seen.current.urls.length);
       }
-    }, 30000);
+    }, 45000);
     return () => clearTimeout(timer.current);
   }, [videoId]);
+
+  const finish = (ok, arg, extra) => {
+    if (done.current) return;
+    done.current = true;
+    clearTimeout(timer.current);
+    if (ok) onCaptions(arg);
+    else onError(arg, extra);
+  };
 
   const injected = `
 (function() {
   var sent = false;
-  function send(text) {
-    if (sent) return; sent = true;
-    try {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ t: "caps", xml: text.slice(0, 900000) }));
-    } catch (e) {}
+  function post(o) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify(o)); } catch (e) {}
   }
-  function check(url, text) {
-    if (sent || !url || url.indexOf("timedtext") === -1 || !text) return;
-    if (text.indexOf("<transcript") !== -1 || text.indexOf('"events"') !== -1) send(text);
+  function sendBody(text, via) {
+    if (sent) return; sent = true;
+    post({ t: "caps", via: via, xml: text.slice(0, 900000) });
+  }
+  function sendUrl(url, via) {
+    post({ t: "url", via: via, url: url.slice(0, 1200) });
+  }
+  function isCapUrl(u) {
+    return u && (u.indexOf("timedtext") !== -1 || u.indexOf("get_transcript") !== -1);
+  }
+  function checkBody(url, text) {
+    if (!isCapUrl(url) || !text) return;
+    if (text.indexOf("<transcript") !== -1 || text.indexOf('"events"') !== -1) {
+      sendBody(text, "hook");
+    }
+  }
+  function checkPlayerResponse(text) {
+    if (!text || text.indexOf("captionTracks") === -1) return;
+    try {
+      var key = '"captionTracks"';
+      var ki = text.indexOf(key);
+      if (ki === -1) return;
+      var si = text.indexOf("[", ki + key.length);
+      if (si === -1) return;
+      var depth = 0, ei = si;
+      for (; ei < text.length && ei < si + 20000; ei++) {
+        var c = text[ei];
+        if (c === "[") depth++;
+        else if (c === "]") { depth--; if (depth === 0) break; }
+      }
+      if (depth !== 0) return;
+      var tracks = JSON.parse(text.slice(si, ei + 1));
+      var urls = [];
+      for (var i = 0; i < tracks.length; i++) {
+        if (tracks[i].baseUrl) urls.push(tracks[i].baseUrl);
+      }
+      if (urls.length) post({ t: "trackurls", urls: urls.slice(0, 8) });
+    } catch (e) {}
   }
   try {
     var ofetch = window.fetch;
     window.fetch = function(u, o) {
       var url = "";
       try { url = String((u && u.url) || u); } catch (e) {}
+      var isPlayer = url.indexOf("/youtubei/v1/player") !== -1;
       return ofetch.apply(this, arguments).then(function(res) {
-        if (url.indexOf("timedtext") !== -1) {
-          res.clone().text().then(function(t) { check(url, t); }).catch(function() {});
+        if (isCapUrl(url) || isPlayer) {
+          res.clone().text().then(function(t) {
+            checkBody(url, t);
+            if (isPlayer) checkPlayerResponse(t);
+          }).catch(function() {});
         }
         return res;
       });
@@ -54,12 +106,25 @@ export default function CaptionWebView({ videoId, onCaptions, onError }) {
     var osend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function() {
       this.addEventListener("load", function() {
-        try { check(this._u || "", this.responseText || ""); } catch (e) {}
+        try {
+          var u = this._u || "";
+          checkBody(u, this.responseText || "");
+          if (u.indexOf("/youtubei/v1/player") !== -1) checkPlayerResponse(this.responseText || "");
+        } catch (e) {}
       });
       return osend.apply(this, arguments);
     };
+    setInterval(function() {
+      try {
+        var rs = performance.getEntriesByType("resource") || [];
+        for (var i = 0; i < rs.length; i++) {
+          var n = rs[i].name || "";
+          if (isCapUrl(n)) sendUrl(n, "perf");
+        }
+      } catch (e) {}
+    }, 1500);
   } catch (e) {}
-  try { window.ReactNativeWebView.postMessage(JSON.stringify({ t: "ready" })); } catch (e) {}
+  post({ t: "ready" });
 })();
 true;
 `;
@@ -71,7 +136,7 @@ true;
   return (
     <WebView
       source={{ uri: url }}
-      style={{ width: 2, height: 2, opacity: 0, position: "absolute" }}
+      style={{ width: 320, height: 180, backgroundColor: "#000" }}
       injectedJavaScriptBeforeContentLoaded={injected}
       mediaPlaybackRequiresUserAction={false}
       allowsInlineMediaPlayback={true}
@@ -84,18 +149,44 @@ true;
         } catch {
           return;
         }
-        if (msg.t === "caps" && !done.current) {
-          done.current = true;
-          clearTimeout(timer.current);
-          onCaptions(msg.xml);
+        if (msg.t === "caps") {
+          finish(true, { body: msg.xml, via: msg.via || "hook" });
+        } else if (msg.t === "url") {
+          if (seen.current.urls.indexOf(msg.url) === -1) {
+            seen.current.urls.push(msg.url);
+          }
+          // Fallback: fetch the captured URL directly from the app.
+          fetch(msg.url)
+            .then((r) => r.text())
+            .then((text) => {
+              if (
+                text.indexOf("<transcript") !== -1 ||
+                text.indexOf('"events"') !== -1
+              ) {
+                finish(true, { body: text, via: "urlfetch" });
+              }
+            })
+            .catch(() => {});
+        } else if (msg.t === "trackurls") {
+          (msg.urls || []).forEach((u) => {
+            fetch(u)
+              .then((r) => r.text())
+              .then((text) => {
+                if (
+                  text &&
+                  (text.indexOf("<transcript") !== -1 ||
+                    text.indexOf('"events"') !== -1)
+                ) {
+                  finish(true, { body: text, via: "trackurl" });
+                }
+              })
+              .catch(() => {});
+          });
         }
       }}
-      onError={() => {
-        if (!done.current) {
-          done.current = true;
-          clearTimeout(timer.current);
-          onError("webview_error");
-        }
+      onError={() => finish(false, "webview_error", "webview onerror")}
+      onHttpError={(e) => {
+        /* keep waiting; player may recover */
       }}
     />
   );
